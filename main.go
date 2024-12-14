@@ -17,10 +17,12 @@ import (
 	"github.com/shirou/gopsutil/disk"
 )
 
-// Configuration
+// Configuration flags
 var (
 	jsonFile     string
 	overrideDir  string
+	storageMode  string
+	cleanLocal   bool
 	showProgress bool
 )
 
@@ -40,6 +42,8 @@ type Mapping struct {
 func init() {
 	flag.StringVar(&jsonFile, "json", "video_mapping.json", "Path to the JSON mapping file")
 	flag.StringVar(&overrideDir, "dir", "", "Manually specify the video directory (overrides device detection)")
+	flag.StringVar(&storageMode, "storage", "local", "Storage mode: 'local' or 'icloud'")
+	flag.BoolVar(&cleanLocal, "clean", false, "Delete local files after upload")
 	flag.BoolVar(&showProgress, "progress", false, "Show progress using TUI (Bubbletea)")
 }
 
@@ -151,6 +155,38 @@ func isVideoFile(filename string) bool {
 	return false
 }
 
+// ProcessLocalStorage moves video files to an archive folder
+func ProcessLocalStorage(videoDir string, video Video) error {
+	archiveDir := filepath.Join(videoDir, "archive")
+	if _, err := os.Stat(archiveDir); os.IsNotExist(err) {
+		if err := os.Mkdir(archiveDir, 0755); err != nil {
+			return fmt.Errorf("failed to create archive directory: %v", err)
+		}
+	}
+
+	sourcePath := filepath.Join(videoDir, video.Filename)
+	destPath := filepath.Join(archiveDir, video.Filename)
+	if err := os.Rename(sourcePath, destPath); err != nil {
+		return fmt.Errorf("failed to move video to archive: %v", err)
+	}
+
+	fmt.Printf("Archived video: %s\n", video.Filename)
+	return nil
+}
+
+// ProcessICloudStorage simulates uploading videos to iCloud
+func ProcessICloudStorage(videoDir string, video Video) error {
+	fmt.Printf("Uploading %s to iCloud...\n", video.Filename)
+	time.Sleep(2 * time.Second) // Simulate upload delay
+	if cleanLocal {
+		if err := os.Remove(filepath.Join(videoDir, video.Filename)); err != nil {
+			return fmt.Errorf("failed to delete local video after iCloud upload: %v", err)
+		}
+		fmt.Printf("Deleted local video: %s\n", video.Filename)
+	}
+	return nil
+}
+
 // Main Bubbletea model for progress bar
 type model struct {
 	total   int
@@ -158,12 +194,8 @@ type model struct {
 	quitting bool
 }
 
-// Init initializes the TUI
-func (m model) Init() bubbletea.Cmd {
-	return nil
-}
+func (m model) Init() bubbletea.Cmd { return nil }
 
-// Update handles progress updates
 func (m model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 	switch msg := msg.(type) {
 	case bubbletea.KeyMsg:
@@ -180,7 +212,6 @@ func (m model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 	return m, nil
 }
 
-// View renders the TUI
 func (m model) View() string {
 	if m.quitting {
 		return "Goodbye!\n"
@@ -226,8 +257,31 @@ func main() {
 		}
 	}
 
-	// Print detected videos
+	// Process each video
 	for _, video := range newVideos {
-		fmt.Printf("Detected video: %s\n", video.Filename)
+		switch storageMode {
+		case "local":
+			err = ProcessLocalStorage(videoDir, video)
+		case "icloud":
+			err = ProcessICloudStorage(videoDir, video)
+		default:
+			fmt.Printf("Invalid storage mode: %s\n", storageMode)
+			return
+		}
+
+		if err != nil {
+			fmt.Printf("Failed to process video: %s (%v)\n", video.Filename, err)
+			continue
+		}
+
+		// Mark video as uploaded
+		video.UploadStatus = "uploaded"
+		video.UploadTimestamp = time.Now().Format(time.RFC3339)
+		mapping.Videos = append(mapping.Videos, video)
+	}
+
+	// Save updated mapping
+	if err := SaveMapping(mapping); err != nil {
+		fmt.Printf("Error saving mapping: %v\n", err)
 	}
 }
