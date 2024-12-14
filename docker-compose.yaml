@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  video_uploader:
+    image: video-uploader:latest
+    build:
+      context: .
+    volumes:
+      - ./video_mapping.json:/app/video_mapping.json
+      - /media/usb:/media/usb # Linux
+      - E::/media/usb         # Windows
+    environment:
+      - PLATFORM=${PLATFORM}
