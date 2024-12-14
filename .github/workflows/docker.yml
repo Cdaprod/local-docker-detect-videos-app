@@ -1,0 +1,53 @@
+name: Build and Run Dockerized Video Uploader
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build Docker image
+      run: |
+        echo "Building Docker image..."
+        docker build -t cdaprod/local-docker-detect-videos-app:latest .
+
+    - name: Log in to DockerHub (if secrets provided)
+      if: secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Push Docker image to DockerHub (if secrets provided)
+      if: secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
+      run: |
+        echo "Pushing Docker image to DockerHub..."
+        docker tag cdaprod/local-docker-detect-videos-app:latest ${{ secrets.DOCKERHUB_USERNAME }}/local-docker-detect-videos-app:latest
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/local-docker-detect-videos-app:latest || echo "DockerHub push failed, continuing gracefully."
+
+  run-container:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Pull and run the Docker container
+      run: |
+        echo "Pulling and running the Docker container..."
+        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/local-docker-detect-videos-app:latest || echo "Using locally built image as fallback."
+        docker run --rm \
+          -v ${{ github.workspace }}/video_mapping.json:/app/video_mapping.json \
+          -v ${{ github.workspace }}/videos:/app/videos \
+          -e STORAGE_MODE=local \
+          -e CLEAN_LOCAL=false \
+          cdaprod/local-docker-detect-videos-app:latest \
+          -json /app/video_mapping.json -progress

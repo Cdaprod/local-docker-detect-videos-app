@@ -1,12 +1,12 @@
 version: "3.9"
 services:
   video_uploader:
-    image: video-uploader:latest
-    build:
-      context: .
+    build: .
+    container_name: video_uploader
     volumes:
       - ./video_mapping.json:/app/video_mapping.json
-      - /media/usb:/media/usb # Linux
-      - E::/media/usb         # Windows
+      - ./videos:/app/videos # Adjust this if using a different video directory
     environment:
-      - PLATFORM=${PLATFORM}
+      - STORAGE_MODE=${STORAGE_MODE:-local}
+      - CLEAN_LOCAL=${CLEAN_LOCAL:-false}
+    command: ["-json", "/app/video_mapping.json", "-storage", "${STORAGE_MODE}", "-progress"]
